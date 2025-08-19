@@ -177,3 +177,4 @@ def audit():
 
     except Exception as e:
         return jsonify({"success": False, "error": f"An error occurred during analysis: {str(e)}"}), 500
+
