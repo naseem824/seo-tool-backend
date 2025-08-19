@@ -15,7 +15,8 @@ from collections import OrderedDict, Counter
 app = Flask(__name__)
 # IMPORTANT: Replace 'https://www.your-wordpress-domain.com' with your actual WordPress URL.
 # This explicitly allows your front-end to connect to this API.
-CORS(app, origins="https://your-wordpress-domain.com")
+CORS(app, origins=["https://seoblogy.com"])
+
 
 # --- Utility Functions ---
 def clean_text(text):
@@ -179,3 +180,4 @@ def audit():
 
     except Exception as e:
         return jsonify({"success": False, "error": f"An error occurred during analysis: {str(e)}"}), 500
+
