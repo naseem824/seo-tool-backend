@@ -26,18 +26,17 @@ REQUEST_HEADERS = {
         "Chrome/124.0 Safari/537.36"
     )
 }
-REQUEST_TIMEOUT = 20  # seconds
+REQUEST_TIMEOUT = 10  # ⏱ shorter timeout
+MAX_CONTENT_SIZE = 500000  # ⏱ limit content to 500 KB
 
 
 # --- Utility Functions ---
 def clean_text(text: str) -> str:
-    """Clean text for keyword extraction."""
     text = re.sub(r"[^a-zA-Z0-9\s]", " ", text or "")
     return text.lower()
 
 
 def extract_keywords(text: str, top_n: int = 20) -> dict:
-    """Extract most frequent keywords excluding stopwords."""
     stopwords = {
         "the","and","to","of","a","in","for","is","on","with","that","as","by",
         "this","an","be","or","it","are","at","from","was","but","not","have","has",
@@ -50,7 +49,6 @@ def extract_keywords(text: str, top_n: int = 20) -> dict:
 
 
 def get_redirected_domain(url: str) -> str:
-    """Follow redirects (HEAD then GET fallback) and return final domain."""
     try:
         r = requests.head(url, allow_redirects=True, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS)
         final_url = r.url
@@ -63,7 +61,6 @@ def get_redirected_domain(url: str) -> str:
 
 
 def heading_structure_score(soup: BeautifulSoup) -> int:
-    """Check if headings follow proper hierarchy (H1->H2->H3, etc.)."""
     headings = [tag.name for tag in soup.find_all(re.compile(r"h[1-6]"))]
     if not headings:
         return 0
@@ -96,16 +93,14 @@ def build_report(url: str, soup: BeautifulSoup, response_status: int) -> Ordered
     report["Meta Description"] = meta_desc
     report["Meta Description Length"] = len(meta_desc) if meta_desc != "Not Found" else 0
 
-    # Headings (H1–H3 per your requirement)
+    # Headings
     for i in range(1, 4):
         hs = soup.find_all(f"h{i}")
         report[f"H{i}"] = " | ".join([h.get_text(strip=True) for h in hs]) or "Not Found"
 
     # Body content (preview only)
     full_text = soup.get_text(" ", strip=True)
-    report["Body Content (Preview)"] = full_text[:5000]  # limit preview
-
-    # ✅ Instead of paragraphs → just count words
+    report["Body Content (Preview)"] = full_text[:5000]
     total_words = len(full_text.split())
     report["Word Count"] = total_words
 
@@ -187,7 +182,6 @@ def build_report(url: str, soup: BeautifulSoup, response_status: int) -> Ordered
 
 
 def format_text_report(report: OrderedDict) -> str:
-    """Make a human-readable plain-text report."""
     lines = ["SEO Audit Report", "=================="]
     for key, value in report.items():
         if isinstance(value, list):
@@ -234,20 +228,23 @@ def audit():
     try:
         resp = requests.get(url, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS)
         resp.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        return jsonify({"success": False, "error": f"Failed to fetch the URL: {str(e)}"}), 400
 
-    try:
-        soup = BeautifulSoup(resp.text, "html.parser")
+        # ✅ Limit content size
+        content = resp.text[:MAX_CONTENT_SIZE]
+        soup = BeautifulSoup(content, "html.parser")
         report = build_report(url, soup, resp.status_code)
         return jsonify({"success": True, "data": report})
+
+    except requests.exceptions.Timeout:
+        return jsonify({"success": False, "error": "Target site took too long to respond"}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({"success": False, "error": f"Failed to fetch the URL: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"success": False, "error": f"An error occurred during analysis: {str(e)}"}), 500
 
 
 @app.route("/audit-report")
 def audit_report():
-    """Plain-text version of the audit (good for copy/paste)."""
     url = request.args.get("url", "").strip()
     if not url:
         return Response("URL parameter is missing.", status=400, mimetype="text/plain")
@@ -255,13 +252,17 @@ def audit_report():
     try:
         resp = requests.get(url, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS)
         resp.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        return Response(f"Failed to fetch the URL: {str(e)}", status=400, mimetype="text/plain")
 
-    try:
-        soup = BeautifulSoup(resp.text, "html.parser")
+        # ✅ Limit content size
+        content = resp.text[:MAX_CONTENT_SIZE]
+        soup = BeautifulSoup(content, "html.parser")
         report = build_report(url, soup, resp.status_code)
         text = format_text_report(report)
         return Response(text, mimetype="text/plain; charset=utf-8")
+
+    except requests.exceptions.Timeout:
+        return Response("Target site took too long to respond", status=504, mimetype="text/plain")
+    except requests.exceptions.RequestException as e:
+        return Response(f"Failed to fetch the URL: {str(e)}", status=400, mimetype="text/plain")
     except Exception as e:
         return Response(f"An error occurred during analysis: {str(e)}", status=500, mimetype="text/plain")
