@@ -55,7 +55,6 @@ def get_redirected_domain(url: str) -> str:
         r = requests.head(url, allow_redirects=True, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS)
         final_url = r.url
         if not final_url or r.status_code >= 400:
-            # some servers block HEAD; try GET (stream to avoid download)
             g = requests.get(url, allow_redirects=True, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS, stream=True)
             final_url = g.url
         return urlparse(final_url).netloc
@@ -102,11 +101,13 @@ def build_report(url: str, soup: BeautifulSoup, response_status: int) -> Ordered
         hs = soup.find_all(f"h{i}")
         report[f"H{i}"] = " | ".join([h.get_text(strip=True) for h in hs]) or "Not Found"
 
-    # Body content (full + paragraphs)
+    # Body content (preview only)
     full_text = soup.get_text(" ", strip=True)
     report["Body Content (Preview)"] = full_text[:5000]  # limit preview
-    para_words = " ".join([p.get_text(strip=True) for p in soup.find_all("p")]).split()
-    report["Paragraphs"] = " ".join(para_words[:2000])
+
+    # ✅ Instead of paragraphs → just count words
+    total_words = len(full_text.split())
+    report["Word Count"] = total_words
 
     # Canonical + Robots
     canonical = soup.find("link", rel="canonical")
@@ -126,11 +127,7 @@ def build_report(url: str, soup: BeautifulSoup, response_status: int) -> Ordered
                 break
     report["Mixed Content"] = "Yes" if is_mixed else "No"
 
-    # Word Count
-    total_words = len(full_text.split())
-    report["Word Count"] = total_words
-
-    # Links (resolve redirects to avoid miscount)
+    # Links
     internal_links, external_links = [], []
     for a in soup.find_all("a", href=True):
         href = a["href"]
@@ -152,21 +149,18 @@ def build_report(url: str, soup: BeautifulSoup, response_status: int) -> Ordered
     report["Total Images"] = len(images)
     report["Images Missing ALT"] = sum(1 for img in images if not (img.get("alt") or "").strip())
 
-    # Schema Markup (JSON-LD)
+    # Schema Markup
     schema_scripts = soup.find_all("script", type="application/ld+json")
     schemas = []
     for s in schema_scripts:
         try:
-            # handle whitespace / comments or multiple JSON blocks
             raw = s.string or s.get_text() or ""
             raw = raw.strip()
             if not raw:
                 continue
-            # Some sites embed arrays or multiple JSON objects separated; try loads
             parsed = json.loads(raw)
             schemas.append(parsed)
         except Exception:
-            # try to recover common issues: remove HTML comments
             try:
                 cleaned = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL)
                 schemas.append(json.loads(cleaned))
