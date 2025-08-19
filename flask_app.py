@@ -1,5 +1,3 @@
-# file: /home/seoblogy/mysite/flask_app.py
-
 import re
 import json
 import requests
@@ -26,8 +24,8 @@ REQUEST_HEADERS = {
         "Chrome/124.0 Safari/537.36"
     )
 }
-REQUEST_TIMEOUT = 10  # ⏱ shorter timeout
-MAX_CONTENT_SIZE = 500000  # ⏱ limit content to 500 KB
+REQUEST_TIMEOUT = 20        # allow a bit longer for slower servers
+MAX_CONTENT_SIZE = 500000   # 500 KB cap
 
 
 # --- Utility Functions ---
@@ -49,15 +47,14 @@ def extract_keywords(text: str, top_n: int = 20) -> dict:
 
 
 def get_redirected_domain(url: str) -> str:
+    """
+    Lightweight domain extractor.
+    Avoids network requests (prevents timeouts).
+    """
     try:
-        r = requests.head(url, allow_redirects=True, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS)
-        final_url = r.url
-        if not final_url or r.status_code >= 400:
-            g = requests.get(url, allow_redirects=True, timeout=REQUEST_TIMEOUT, headers=REQUEST_HEADERS, stream=True)
-            final_url = g.url
-        return urlparse(final_url).netloc
-    except Exception:
         return urlparse(url).netloc
+    except Exception:
+        return ""
 
 
 def heading_structure_score(soup: BeautifulSoup) -> int:
@@ -100,7 +97,7 @@ def build_report(url: str, soup: BeautifulSoup, response_status: int) -> Ordered
 
     # Body content (preview only)
     full_text = soup.get_text(" ", strip=True)
-    report["Body Content (Preview)"] = full_text[:5000]
+    report["Body Content (Preview)"] = full_text[:1000]   # shorter preview
     total_words = len(full_text.split())
     report["Word Count"] = total_words
 
